@@ -45,6 +45,20 @@ class Watchmedo extends ChildProcessAbstract
 
     protected function _getEventFromLine($line)
     {
+        $regexIgnorePattern = implode('|', str_replace(array('*', '/'), '', $this->_excludePatterns));
+        $file = str_replace('\\\\', '/', $m[2]); // windows
+        $ev = $m[1];
+
+        if (substr($file, -1) === '~') {
+            $this->_logger->debug("ignoring event, since this is a temporary file");
+            return;
+        }
+        // Watchmedo ignore patterns are not working and there seems to be no solution yet, see https://github.com/gorakhargosh/watchdog/issues/798
+        // exclude files from events here instead
+        if (preg_match("#".$regexIgnorePattern.'#', $file)) {
+            $this->_logger->debug("ignoring event, since excludePattern \"$regexIgnorePattern\" was matched in path: $file");
+            return;
+        }
         if (!preg_match('#^on_([a-z]+)\(.*event=.*src_path=u?\'([^\']+)\'(, dest_path=u?\'([^\']+)\')?#', trim($line), $m)) {
             $this->_logger->error("unknown event: $line");
             return;
