@@ -45,6 +45,10 @@ class Watchmedo extends ChildProcessAbstract
 
     protected function _getEventFromLine($line)
     {
+        if (!preg_match('#^on_([a-z]+)\(.*event=.*src_path=u?\'([^\']+)\'(, dest_path=u?\'([^\']+)\')?#', trim($line), $m)) {
+            $this->_logger->error("unknown event: $line");
+            return;
+        }
         $regexIgnorePattern = implode('|', str_replace(array('*', '/'), '', $this->_excludePatterns));
         $file = str_replace('\\\\', '/', $m[2]); // windows
         $ev = $m[1];
@@ -59,12 +63,6 @@ class Watchmedo extends ChildProcessAbstract
             $this->_logger->debug("ignoring event, since excludePattern \"$regexIgnorePattern\" was matched in path: $file");
             return;
         }
-        if (!preg_match('#^on_([a-z]+)\(.*event=.*src_path=u?\'([^\']+)\'(, dest_path=u?\'([^\']+)\')?#', trim($line), $m)) {
-            $this->_logger->error("unknown event: $line");
-            return;
-        }
-        $ev = $m[1];
-        $file = str_replace('\\\\', '/', $m[2]); //windows
         if ($ev == 'modified') {
             return new ModifyEvent($file);
         } else if ($ev == 'created') {
