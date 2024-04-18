@@ -12,6 +12,9 @@ class Fswatch extends ChildProcessAbstract
 
     public function isAvailable()
     {
+        // disable fswatch for Apple-silicon macs as it regularly fails
+        if (php_uname('m') === 'arm64') return false;
+
         exec("fswatch --version 2>&1", $out, $ret);
         return $ret == 0;
     }

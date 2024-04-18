@@ -8,6 +8,9 @@ use Kwf\FileWatcher\Helper\Links as LinksHelper;
 
 class Watchmedo extends ChildProcessAbstract
 {
+    const SHELL_COMMAND_FORMAT = 'echo "EVENT_TYPE:${watch_event_type} SRC_PATH:\'${watch_src_path}\' DEST_PATH:\'${watch_dest_path}\'"';
+    const EVENT_LINE_REGEXP = '#^EVENT_TYPE:([a-z]+)\sSRC_PATH:u?\'([^\']+)\'\sDEST_PATH:(u?\'([^\']+)\')?#';
+
     public function isAvailable()
     {
         exec("watchmedo --version 2>&1", $out, $ret);
@@ -20,7 +23,9 @@ class Watchmedo extends ChildProcessAbstract
         foreach ($exclude as &$e) {
             $e = '*'.$e;
         }
-        $cmd = "watchmedo log --recursive --ignore-directories ";
+        // watchmedo does not log anyting by default (maybe because of some settings in Python or PyEnv?)
+        // @see: https://github.com/gorakhargosh/watchdog/issues/913
+        $cmd = "watchmedo shell-command --command=".escapeshellarg(self::SHELL_COMMAND_FORMAT)." --recursive --ignore-directories ";
         if ($exclude) $cmd .= "--ignore-patterns ".escapeshellarg(implode(';', $exclude)).' ';
 
 
@@ -45,12 +50,24 @@ class Watchmedo extends ChildProcessAbstract
 
     protected function _getEventFromLine($line)
     {
-        if (!preg_match('#^on_([a-z]+)\(.*event=.*src_path=u?\'([^\']+)\'(, dest_path=u?\'([^\']+)\')?#', trim($line), $m)) {
+        if (!preg_match(self::EVENT_LINE_REGEXP, trim($line), $m)) {
             $this->_logger->error("unknown event: $line");
             return;
         }
+        $regexIgnorePattern = implode('|', str_replace(array('*', '/'), '', $this->_excludePatterns));
+        $file = str_replace('\\\\', '/', $m[2]); // windows
         $ev = $m[1];
-        $file = str_replace('\\\\', '/', $m[2]); //windows
+
+        if (substr($file, -1) === '~') {
+            $this->_logger->debug("ignoring event, since this is a temporary file");
+            return;
+        }
+        // Watchmedo ignore patterns are not working and there seems to be no solution yet, see https://github.com/gorakhargosh/watchdog/issues/798
+        // exclude files from events here instead
+        if (preg_match("#".$regexIgnorePattern.'#', $file)) {
+            $this->_logger->debug("ignoring event, since excludePattern \"$regexIgnorePattern\" was matched in path: $file");
+            return;
+        }
         if ($ev == 'modified') {
             return new ModifyEvent($file);
         } else if ($ev == 'created') {
